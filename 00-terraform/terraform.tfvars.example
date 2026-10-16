@@ -1,0 +1,24 @@
+# Only values you are likely to change; every other knob and its default is in variables.tf.
+
+proxmox_endpoint = "https://pve.example.com:8006/"
+proxmox_insecure = true
+proxmox_node     = "pve"
+# Better passed via env: export TF_VAR_proxmox_api_token='terraform@pve!talos=...'
+# proxmox_api_token = "terraform@pve!talos=00000000-0000-0000-0000-000000000000"
+
+vm_defaults = {
+  # Raw disks for Ceph / Cinder, attached as scsi1, scsi2, ...
+  # extra_disks = [{ size_gb = 200 }]
+}
+
+network = {
+  ipv4_gateway = "192.168.1.1"
+  dns_servers  = ["192.168.1.1"]
+}
+
+# Drop ipv4_address on a node to get its address from DHCP instead.
+nodes = {
+  "talos-01" = { vm_id = 901, ipv4_address = "192.168.1.101/24" }
+  "talos-02" = { vm_id = 902, ipv4_address = "192.168.1.102/24" }
+  "talos-03" = { vm_id = 903, ipv4_address = "192.168.1.103/24" }
+}
