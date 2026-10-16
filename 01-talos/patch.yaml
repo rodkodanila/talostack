@@ -1,0 +1,25 @@
+apiVersion: v1alpha1
+kind: KubeFlannelCNIConfig
+$patch: delete
+---
+apiVersion: v1alpha1
+kind: KubeProxyConfig
+enabled: false
+---
+# The default 10.96.0.0/12 covers 10.96-10.111.x.x and overlaps the node network 10.110.1.0/24.
+apiVersion: v1alpha1
+kind: KubeNetworkConfig
+serviceSubnets:
+  - 10.96.0.0/16
+---
+apiVersion: v1alpha1
+kind: Layer2VIPConfig
+name: 10.110.1.101
+link: ens18
+---
+# All nodes are control planes, there are no workers: let workloads schedule on them.
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+taints:
+  node-role.kubernetes.io/control-plane:
+    $patch: delete

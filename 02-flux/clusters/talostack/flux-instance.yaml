@@ -1,0 +1,29 @@
+# Applied first by the Talos bootstrap Job (01-talos/init-bootstrap.yaml), then adopted here.
+# Keep the spec in sync with the copy in that Job.
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+  annotations:
+    # Removing this file from Git must not uninstall Flux.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  distribution:
+    version: "2.x"
+    registry: ghcr.io/fluxcd
+    artifact: oci://ghcr.io/controlplaneio-fluxcd/flux-operator-manifests
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+  cluster:
+    type: kubernetes
+    domain: cluster.local
+    networkPolicy: true
+  sync:
+    kind: GitRepository
+    url: https://github.com/rodkodanila/talostack.git
+    ref: refs/heads/main
+    path: 02-flux/clusters/talostack

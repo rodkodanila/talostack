@@ -1,0 +1,33 @@
+# Installed first by the Talos bootstrap Job (01-talos/init-bootstrap.yaml), then adopted here.
+# Values come from the cilium-values ConfigMap that Talos owns, so Talos and Flux never disagree.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cilium
+  namespace: kube-system
+spec:
+  interval: 1h
+  url: https://helm.cilium.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cilium
+  namespace: kube-system
+  annotations:
+    # Removing this file from Git must not uninstall the CNI.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  interval: 30m
+  releaseName: cilium
+  chart:
+    spec:
+      chart: cilium
+      version: 1.18.0
+      sourceRef:
+        kind: HelmRepository
+        name: cilium
+  valuesFrom:
+    - kind: ConfigMap
+      name: cilium-values
+      valuesKey: values.yaml

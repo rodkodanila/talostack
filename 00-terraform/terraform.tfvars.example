@@ -1,19 +1,21 @@
 # Only values you are likely to change; every other knob and its default is in variables.tf.
 
-proxmox_endpoint = "https://pve.example.com:8006/"
+proxmox_endpoint = "https://192.168.8.200:8006/"
 proxmox_insecure = true
-proxmox_node     = "pve"
+proxmox_node     = "pve1"
 # Better passed via env: export TF_VAR_proxmox_api_token='terraform@pve!talos=...'
-# proxmox_api_token = "terraform@pve!talos=00000000-0000-0000-0000-000000000000"
+proxmox_api_token = ""
+
 
 # ISO already uploaded to Proxmox storage (Datacenter -> <storage> -> ISO Images).
-talos_iso_file_id = "local:iso/talos-v1.14.3-nocloud-amd64.iso"
+talos_iso_file_id = "local:iso/metal-amd64.iso"
 
 vm_defaults = {
   # Attached in order as scsi0, scsi1, ...; the first disk is the boot disk.
   # `storage` is the Proxmox storage name; unset means vm_defaults.datastore_id (local-lvm).
   disks = [
-    { size_gb = 100 },
+    { size_gb = 50, storage = "nvme-thin" },
+    { size_gb = 200, storage = "nvme-thin" },
     # { size_gb = 500, storage = "ceph-hdd" }, # e.g. a raw disk for Ceph / Cinder
   ]
 }
@@ -21,16 +23,16 @@ vm_defaults = {
 # NICs every VM gets, in order: net0, net1, ...
 network = {
   interfaces = [
-    { bridge = "vmbr0", ipv4_gateway = "192.168.1.1" },
+    { bridge = "vlan_0" },
+    { bridge = "vlan_1" },
     # { bridge = "vmbr1", vlan_id = 20, mtu = 9000 }, # e.g. storage / tenant network
   ]
-  dns_servers = ["192.168.1.1"]
 }
 
 # network_interfaces line up with network.interfaces by position.
 # Omit ipv4_address to use DHCP on that NIC, omit mac_address to let Proxmox generate one.
 nodes = {
-  "talos-01" = { vm_id = 901, network_interfaces = [{ ipv4_address = "192.168.1.101/24" }] }
-  "talos-02" = { vm_id = 902, network_interfaces = [{ ipv4_address = "192.168.1.102/24" }] }
-  "talos-03" = { vm_id = 903, network_interfaces = [{ ipv4_address = "192.168.1.103/24" }] }
+  "talos-01" = { vm_id = 201, network_interfaces = [] }
+  "talos-02" = { vm_id = 202, network_interfaces = [] }
+  "talos-03" = { vm_id = 203, network_interfaces = [] }
 }

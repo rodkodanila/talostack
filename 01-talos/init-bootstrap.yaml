@@ -1,0 +1,180 @@
+cluster:
+  inlineManifests:
+    - name: cilium-values
+      contents: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: cilium-values
+          namespace: kube-system
+        data:
+          values.yaml: |
+            cluster:
+              name: talostack
+            # KubePrism: local apiserver proxy on every Talos node, works before CNI is up.
+            k8sServiceHost: localhost
+            k8sServicePort: 7445
+            kubeProxyReplacement: true
+
+            # Required on Talos: no CAP_SYS_MODULE, cgroupv2 is already mounted by the OS.
+            securityContext:
+              capabilities:
+                ciliumAgent: [CHOWN, KILL, NET_ADMIN, NET_RAW, IPC_LOCK, SYS_ADMIN, SYS_RESOURCE, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+                cleanCiliumState: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE]
+            cgroup:
+              autoMount:
+                enabled: false
+              hostRoot: /sys/fs/cgroup
+
+            ipam:
+              mode: kubernetes
+            routingMode: native
+            # Must match cluster podSubnets.
+            ipv4NativeRoutingCIDR: 10.244.0.0/16
+            autoDirectNodeRoutes: true
+            enableIPv4Masquerade: true
+            bpf:
+              masquerade: true
+            ipMasqAgent:
+              enabled: true
+              config:
+                nonMasqueradeCIDRs:
+                  - 10.244.0.0/16
+
+            nodePort:
+              enabled: true
+              addresses:
+                - 10.110.1.0/24
+            externalIPs:
+              enabled: true
+            loadBalancer:
+              algorithm: maglev
+            l2announcements:
+              enabled: true
+            # L2 announcements hold a lease per Service; the default client rate limit is too low.
+            k8sClientRateLimit:
+              qps: 10
+              burst: 20
+
+            hostFirewall:
+              enabled: false
+            hubble:
+              enabled: false
+            envoy:
+              enabled: false
+
+    - name: bootstrap-rbac
+      contents: |
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: bootstrap
+          namespace: kube-system
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: bootstrap
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+          - kind: ServiceAccount
+            name: bootstrap
+            namespace: kube-system
+
+    - name: cluster-bootstrap
+      contents: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: cluster-bootstrap
+          namespace: kube-system
+        spec:
+          backoffLimit: 5
+          template:
+            spec:
+              # No CNI yet: only the host network works.
+              hostNetwork: true
+              dnsPolicy: Default
+              serviceAccountName: bootstrap
+              restartPolicy: OnFailure
+              nodeSelector:
+                node-role.kubernetes.io/control-plane: ""
+              # Nodes are NotReady until Cilium is up, tolerate every taint.
+              tolerations:
+                - operator: Exists
+              volumes:
+                - name: cilium-values
+                  configMap:
+                    name: cilium-values
+              containers:
+                - name: bootstrap
+                  image: alpine/k8s:1.35.0
+                  imagePullPolicy: IfNotPresent
+                  env:
+                    # kube-proxy is disabled, the Service IP 10.96.0.1 is unreachable until Cilium runs.
+                    # Point in-cluster config at KubePrism instead.
+                    - name: KUBERNETES_SERVICE_HOST
+                      value: localhost
+                    - name: KUBERNETES_SERVICE_PORT
+                      value: "7445"
+                  volumeMounts:
+                    - name: cilium-values
+                      mountPath: /values
+                  command:
+                    - /bin/bash
+                    - -ceu
+                    - |
+                      kubectl get nodes
+
+                      echo "==> Installing Cilium"
+                      helm repo add cilium https://helm.cilium.io
+                      helm repo update
+                      helm upgrade --install cilium cilium/cilium \
+                        --version 1.18.0 \
+                        --namespace kube-system \
+                        --values /values/values.yaml
+
+                      echo "==> Waiting for Cilium"
+                      kubectl -n kube-system rollout status ds/cilium --timeout=5m
+
+                      echo "==> Installing Flux Operator"
+                      helm upgrade --install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+                        --version 0.61.0 \
+                        --namespace flux-system \
+                        --create-namespace
+                      kubectl -n flux-system rollout status deploy/flux-operator --timeout=5m
+
+                      # From here Flux syncs 02-flux/clusters/talostack and takes over cilium,
+                      # flux-operator and this FluxInstance. Keep it in sync with
+                      # 02-flux/clusters/talostack/flux-instance.yaml.
+                      echo "==> Installing Flux Instance"
+                      kubectl apply -f - <<'EOF'
+                      apiVersion: fluxcd.controlplane.io/v1
+                      kind: FluxInstance
+                      metadata:
+                        name: flux
+                        namespace: flux-system
+                      spec:
+                        distribution:
+                          version: "2.x"
+                          registry: ghcr.io/fluxcd
+                          artifact: oci://ghcr.io/controlplaneio-fluxcd/flux-operator-manifests
+                        components:
+                          - source-controller
+                          - kustomize-controller
+                          - helm-controller
+                          - notification-controller
+                        cluster:
+                          type: kubernetes
+                          domain: cluster.local
+                          networkPolicy: true
+                        sync:
+                          kind: GitRepository
+                          url: https://github.com/rodkodanila/talostack.git
+                          ref: refs/heads/main
+                          path: 02-flux/clusters/talostack
+                      EOF
+                      kubectl -n flux-system wait fluxinstance/flux --for=condition=Ready --timeout=10m
