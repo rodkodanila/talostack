@@ -1,8 +1,14 @@
 # 00-terraform
 
-Создаёт в Proxmox VE три ВМ, загружающиеся с ISO Talos Linux. ISO собирается в [Image Factory](https://factory.talos.dev) с нужными расширениями (по умолчанию `qemu-guest-agent`) и скачивается в Proxmox напрямую. После `apply` ВМ стоят в maintenance-режиме Talos и ждут machine config.
+Создаёт в Proxmox VE три ВМ, загружающиеся с ISO Talos Linux, который уже лежит в хранилище Proxmox (Terraform его не скачивает). После `apply` ВМ стоят в maintenance-режиме Talos и ждут machine config.
 
-Платформа образа — `nocloud`: Proxmox cloud-init диск отдаёт Talos hostname (имя ВМ) и сеть. Если у ноды задан `ipv4_address`, адрес статический, иначе DHCP.
+ISO должен быть собран под платформу `nocloud` (например, в [Image Factory](https://factory.talos.dev): Cloud Server → Nocloud, с расширением `qemu-guest-agent`). Тогда Proxmox cloud-init диск отдаёт Talos hostname (имя ВМ) и сеть. Для ISO `metal` поставьте `talos_platform = "metal"`: cloud-init диска не будет, адреса только по DHCP.
+
+## Диски и сети
+
+- `vm_defaults.disks` — список дисков; подключаются по порядку как `scsi0`, `scsi1`, … (шина — `vm_defaults.disk_bus`). У каждого свой `size_gb` и `storage` (имя хранилища Proxmox), плюс `cache`, `discard`, `ssd`, `iothread`, `backup`. Первый диск — загрузочный. `nodes[*].disks` заменяет список целиком для одной ноды.
+- `network.interfaces` — список сетевых карт, одинаковый для всех ВМ (`net0`, `net1`, …): bridge, VLAN, MTU, модель, queues, rate limit, gateway.
+- `nodes[*].network_interfaces` — MAC и IPv4 по позиции соответствующей карты. Без `ipv4_address` карта получает адрес по DHCP.
 
 ## Запуск
 
@@ -14,13 +20,11 @@ terraform apply
 terraform output nodes
 ```
 
-Минимальные права токена в Proxmox: `VM.Allocate`, `VM.Config.*`, `VM.PowerMgmt`, `VM.Audit`, `Datastore.AllocateSpace`, `Datastore.AllocateTemplate`, `Datastore.Audit`, `Sys.Audit`, `Sys.Modify` (нужен для download-url), `SDN.Use`.
+Права токена в Proxmox: `VM.Allocate`, `VM.Config.*`, `VM.PowerMgmt`, `VM.Audit`, `Datastore.AllocateSpace`, `Datastore.Audit` на хранилищах дисков и ISO, `SDN.Use` на bridge.
 
-В maintenance-режиме Talos не запускает расширения, поэтому guest agent заработает только после установки. Terraform не ждёт IP от агента (`vm_defaults.agent_wait_for_ipv4 = false`), и в `nodes` у DHCP-нод до установки будет `unknown`: адрес смотрите в консоли ВМ или в DHCP-сервере. После установки `terraform refresh` подтянет IP от агента.
+В maintenance-режиме Talos не запускает расширения, поэтому guest agent заработает только после установки. Terraform не ждёт IP от агента (`vm_defaults.agent_wait_for_ipv4 = false`); в `nodes` до установки заполнен только `ipv4_static`. После установки `terraform refresh` подтянет `ipv4_agent`.
 
-## Что дальше
-
-`terraform output talos_installer_image` — образ для `machine.install.image` в machine config: при установке на диск Talos получит те же расширения, что и в ISO. ВМ грузятся с диска первым, поэтому после установки ISO больше не используется.
+ВМ грузятся сначала с диска, потом с ISO: пока диск пуст, стартует ISO, после установки Talos — диск.
 
 ## Тесты
 
@@ -28,4 +32,4 @@ terraform output nodes
 terraform test
 ```
 
-Тесты гоняют `plan` на mock-провайдерах и проверяют валидацию переменных; доступ к Proxmox не нужен.
+Тесты гоняют `plan` на mock-провайдере и проверяют валидацию переменных; доступ к Proxmox не нужен.
