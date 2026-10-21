@@ -23,3 +23,11 @@ kind: KubeNodeConfig
 taints:
   node-role.kubernetes.io/control-plane:
     $patch: delete
+---
+# CoreDNS -> host DNS (169.254.116.108) times out with Cilium bpf.masquerade (known Talos + Cilium issue).
+# Let CoreDNS forward straight to the upstream resolvers instead.
+apiVersion: v1alpha1
+kind: ResolverConfig
+hostDNS:
+  enabled: true
+  forwardKubeDNSToHost: false

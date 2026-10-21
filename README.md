@@ -67,7 +67,8 @@ The nodes stay `NotReady` until the `cluster-bootstrap` Job installs Cilium. The
 which syncs `02-flux/clusters/talostack` from this repo (branch `main`) and takes over the cilium and flux-operator releases and the FluxInstance itself.
 
 ```bash
-talosctl kubeconfig --nodes "$BOOTSTRAP_IP"   # merges into ~/.kube/config
+talosctl kubeconfig --nodes "$BOOTSTRAP_IP" --merge=false --force ./kubeconfig   # admin credentials, gitignored
+export KUBECONFIG=$PWD/kubeconfig
 
 kubectl -n kube-system logs -f job/cluster-bootstrap
 kubectl get nodes -o wide

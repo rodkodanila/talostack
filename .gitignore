@@ -3,3 +3,4 @@ talosconfig
 worker.yaml
 controlplane.yaml
 secrets.yaml
+kubeconfig
