@@ -54,7 +54,10 @@ variable "vm_defaults" {
     cpu_cores   = optional(number, 8)
     cpu_sockets = optional(number, 1)
     cpu_type    = optional(string, "host")
-    memory_mb   = optional(number, 16384)
+    # Guests run their own VMs (OpenStack Nova / KubeVirt): needs vmx/svm passed through,
+    # which only cpu_type host or max do. The Proxmox host must have kvm_intel/kvm_amd nested=1.
+    nested_virtualization = optional(bool, true)
+    memory_mb             = optional(number, 16384)
 
     # Storage for disks without their own `storage`, the EFI disk and the cloud-init drive.
     datastore_id = optional(string, "local-lvm")
@@ -94,6 +97,11 @@ variable "vm_defaults" {
     tags            = optional(list(string), ["talos", "terraform"])
   })
   default = {}
+
+  validation {
+    condition     = !var.vm_defaults.nested_virtualization || contains(["host", "max"], var.vm_defaults.cpu_type)
+    error_message = "nested_virtualization needs cpu_type = \"host\" (or \"max\"); other CPU models hide vmx/svm from the guest."
+  }
 
   validation {
     condition     = length(var.vm_defaults.disks) > 0

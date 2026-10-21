@@ -10,6 +10,16 @@ ISO должен быть собран под платформу `nocloud` (на
 - `network.interfaces` — список сетевых карт, одинаковый для всех ВМ (`net0`, `net1`, …): bridge, VLAN, MTU, модель, queues, rate limit, gateway.
 - `nodes[*].network_interfaces` — MAC и IPv4 по позиции соответствующей карты. Без `ipv4_address` карта получает адрес по DHCP.
 
+## Вложенная виртуализация
+
+ВМ рассчитаны на запуск своих ВМ (OpenStack Nova, KubeVirt): `vm_defaults.cpu_type = "host"` пробрасывает в гостя vmx/svm, а `vm_defaults.nested_virtualization = true` (по умолчанию) не даёт выбрать модель CPU без них. Со стороны Proxmox нужен включённый nested в KVM — на хосте:
+
+```sh
+cat /sys/module/kvm_intel/parameters/nested   # или kvm_amd; ожидается Y / 1
+```
+
+Если `N`/`0`: `echo "options kvm_intel nested=1" > /etc/modprobe.d/kvm-nested.conf` (для AMD — `kvm_amd`), затем перезагрузка хоста или `modprobe -r kvm_intel && modprobe kvm_intel` при остановленных ВМ. Внутри гостя после установки Talos проверка: `talosctl -n <ip> ls /dev/kvm`.
+
 ## Запуск
 
 ```sh
